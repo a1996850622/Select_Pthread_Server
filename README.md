@@ -19,4 +19,4 @@ For **select_client.c**:
 - If you want to tansfer file, you can key in the following string in client side.
   - `require test.txt`
 
-After keying `require test.txt`, server will send the **test.txt** to Client folder.
+  After keying `require test.txt`, server will send the **[test.txt]** file to Client folder.
