@@ -8,6 +8,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 // Used to print error messages
 #define PANIC(msg) { perror(msg); exit(-1); }
@@ -15,7 +17,8 @@
 
 int main(int argc, char *argv[]){
 	int server_fd; 
-	int client_fd; 
+	int client_fd;
+	int fd; // The return value of open()
 	struct sockaddr_in server_addr; 
 	struct sockaddr_in client_addr; 
 	fd_set master_fds; 
@@ -25,10 +28,13 @@ int main(int argc, char *argv[]){
 	int port; // Port number
 	int len; // sizeof(client_addr)
 	int i, j; // For for loop
-	char buf[256]; 
+	char buf[256];
+	char filename[256];
+	char file_buf[1024];
 	int nbytes; // Read the size of data
 	int yes=1; // For setsockopt()
 	int retval; // The return value of select()
+	int recvnum;
 
 	struct sigaction action;
 	action.sa_handler=SIG_IGN;
@@ -124,18 +130,48 @@ int main(int argc, char *argv[]){
 				else {
 					// Read the data into buffer
 					if ((nbytes=read(i, buf, sizeof(buf))) > 0) {
-						write(0,buf,nbytes); // Write the data of buffer to ur console
-						for(j=0; j<=fdmax; j++) {
-							if (FD_ISSET(j, &master_fds))
 
-								/* 
-								 * In addition to me, STDIN, and the client which sended date,
-								 * we should send a copy to the other clients
-								 */
-								if (j!=server_fd && j!=i &&j!=0) 
-									if (send(j, buf, nbytes, 0) == -1)
-										perror("send");
-						}//for
+						// If client require file
+						if(strstr(buf, "require")!=NULL){
+							// Parse the filename
+							sscanf(buf, "require %s\n", filename);
+							printf("Client %d require the [%s] file\n", i, filename);
+
+							// Open the file which client require
+							fd=open(filename, O_RDONLY, 0666);
+							switch(fd){
+								case -1:
+									perror("open");
+									write(i, "File not exists", sizeof("File not exists"));
+									continue;
+								default: // File exists and Open successfully.
+									printf("%s exists.\n", filename);
+
+									// Read the file data
+									recvnum=read(fd, file_buf, sizeof(file_buf));
+									if(recvnum==-1) perror("recv");
+
+									// Send file date to client
+									write(i, file_buf, recvnum);
+									continue;
+							}
+						}
+						// If client not require file, just send message to me.
+						else{
+							write(0,buf,nbytes); // Write the data of buffer to ur console
+
+							for(j=0; j<=fdmax; j++) {
+								if (FD_ISSET(j, &master_fds))
+
+									/* 
+									 * In addition to me, STDIN, and the client which sended date,
+									 * we should send a copy to the other clients
+									 */
+									if (j!=server_fd && j!=i &&j!=0) 
+										if (send(j, buf, nbytes, 0) == -1)
+											perror("send");
+							} // for
+						}
 					} 
 
 					else { 
@@ -144,8 +180,8 @@ int main(int argc, char *argv[]){
 						FD_CLR(i, &master_fds); // Clean "i" from master_fds
 					}
 				}
-			}//if
-		} //for scan all IO
-	}//for server loop
+			} // if
+		} // for scan all IO
+	} // for server loop
 	return 0;
 }
