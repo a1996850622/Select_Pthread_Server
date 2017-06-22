@@ -10,15 +10,20 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <pthread.h>
 
 // Used to print error messages
 #define PANIC(msg) { perror(msg); exit(-1); }
 #define STDIN 0
 
+// Thread Function, used to handle file transmission
+void* threadFunc(void *threadArgs);
+char filename[256];
+
 int main(int argc, char *argv[]){
 	int server_fd; 
 	int client_fd;
-	int fd; // The return value of open()
+	//int fd; // The return value of open()
 	struct sockaddr_in server_addr; 
 	struct sockaddr_in client_addr; 
 	fd_set master_fds; 
@@ -29,12 +34,13 @@ int main(int argc, char *argv[]){
 	int len; // sizeof(client_addr)
 	int i, j; // For for loop
 	char buf[256];
-	char filename[256];
-	char file_buf[1024];
+	//char filename[256];
+	//char file_buf[1024];
 	int nbytes; // Read the size of data
 	int yes=1; // For setsockopt()
 	int retval; // The return value of select()
-	int recvnum;
+	//int recvnum;
+	pthread_t threadid;
 
 	struct sigaction action;
 	action.sa_handler=SIG_IGN;
@@ -76,6 +82,8 @@ int main(int argc, char *argv[]){
 
 	// Server Loop
 	for(;;) {
+		int *threadArgs = calloc(1, sizeof(int));
+
 		tv.tv_sec = 60; // Set the time out time to 60 seconds
 		tv.tv_usec = 0;
 
@@ -137,6 +145,23 @@ int main(int argc, char *argv[]){
 							sscanf(buf, "require %s\n", filename);
 							printf("Client %d require the [%s] file\n", i, filename);
 
+							*threadArgs = i;
+
+							//puts("1");
+
+							// Cteate a thread
+							if(pthread_create(&threadid, NULL, threadFunc, threadArgs)!=0){
+								PANIC("pthread_create()");
+							} else{
+								/*
+								 * After finishing the thread function,
+								 * the resource will automatically freed.
+								 */
+								pthread_detach(threadid);
+								//puts("2");
+							}
+
+							/*
 							// Open the file which client require
 							fd=open(filename, O_RDONLY, 0666);
 							switch(fd){
@@ -147,14 +172,17 @@ int main(int argc, char *argv[]){
 								default: // File exists and Open successfully.
 									printf("%s exists.\n", filename);
 
+									
 									// Read the file data
 									recvnum=read(fd, file_buf, sizeof(file_buf));
 									if(recvnum==-1) perror("recv");
 
 									// Send file date to client
 									write(i, file_buf, recvnum);
+
 									continue;
 							}
+							*/
 						}
 						// If client not require file, just send message to me.
 						else{
@@ -184,4 +212,37 @@ int main(int argc, char *argv[]){
 		} // for scan all IO
 	} // for server loop
 	return 0;
+}
+
+// Used to handle file transmission
+void* threadFunc(void *threadArgs){
+	int fd;
+	int recvnum;
+	char file_buf[1024];
+	int clientfd = *(int*)threadArgs;
+	free(threadArgs);
+
+	puts("3");
+
+	// Open the file which client require
+	fd=open(filename, O_RDONLY, 0666);
+	switch(fd){
+		case -1:
+			perror("open");
+			write(clientfd, "File not exists", sizeof("File not exists"));
+			//continue;
+			//puts("4");
+		default: // File exists and Open successfully.
+			printf("%s exists.\n", filename);
+									
+			// Read the file data
+			recvnum=read(fd, file_buf, sizeof(file_buf));
+			if(recvnum==-1) perror("recv");
+
+			// Send file date to client
+			write(clientfd, file_buf, recvnum);
+
+			//continue;
+			//puts("5");
+	}
 }
